@@ -50,3 +50,6 @@ __pycache__/
 
 # Temp files
 *.tmp
+*.zip
+*.xlsx
+*.csi
