@@ -1,0 +1,52 @@
+# Large data files - never commit these
+data/fastq/*.fastq.gz
+data/sra/
+data/tmp/
+
+# BAM files - too large
+results/**/*.bam
+results/**/*.bai
+results/**/*.cram
+
+# Intermediate VCF files - keep final ones only
+results/**/*.unfiltered.vcf.gz
+results/**/*.unfiltered.vcf.gz.tbi
+
+# Reference genome files - too large
+ref/*.fasta
+ref/*.fasta.fai
+ref/*.amb
+ref/*.ann
+ref/*.bwt
+ref/*.pac
+ref/*.sa
+ref/*.dict
+
+# GATK resource bundle VCFs - downloaded by 04_prepare_reference.sh, not committed
+ref/*.vcf
+ref/*.vcf.gz
+ref/*.vcf.gz.tbi
+ref/*.vcf.gz.csi
+
+# BRP2 per-sample/per-library variant calls - raw study data, not used by pipeline
+ref/BRP2/*.vcf.gz
+ref/BRP2/.vcf.gz
+
+# macOS metadata
+.DS_Store
+**/.DS_Store
+._*
+**/._*
+
+# Claude Code local config (machine-specific)
+.claude/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Logs
+*.log
+
+# Temp files
+*.tmp

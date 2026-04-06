@@ -1,0 +1,37 @@
+name: ctdna2
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  # Core language and JVM
+  - python=3.10.20
+  - openjdk=25.0.2
+
+  # Alignment
+  - bwa=0.7.19
+  - samtools=1.23.1
+  - htslib=1.23.1
+
+  # Variant calling
+  - bcftools=1.23.1
+  - gatk4=4.6.2.0
+  - picard=3.4.0
+  - lofreq          # low-VAF caller; no version pin — not yet installed
+
+  # Consensus / UMI calling
+  # NOTE: fgbio bioconda package has been known to conflict with gatk4 in the
+  # same environment. If `conda env create` fails, remove fgbio from this list,
+  # create the env, then run 01_setup_env.sh — it will download the JAR instead.
+  - fgbio           # no version pin — not yet installed
+
+  # QC
+  - fastqc=0.12.1
+  - multiqc=1.33
+
+  # Utilities
+  - bedtools=2.31.1
+  - seqtk=1.5
+  - mosdepth=0.3.13
+  - sra-tools=3.2.1
+  - entrez-direct=24.0
