@@ -47,7 +47,7 @@ export KNOWN_NEGATIVES_BED="${KNOWN_NEGATIVES_BED:-$SAMPLEA_DIR/KnownNegatives_h
 # Consensus calling parameters
 export UMI_MIN_READS="${UMI_MIN_READS:-2}"
 export UMI_MIN_BASE_QUALITY="${UMI_MIN_BASE_QUALITY:-20}"
-export FGBIO_JAR="${FGBIO_JAR:-}"  # set by 11_install_missing_tools.sh
+export FGBIO_JAR="${FGBIO_JAR:-/home/ubuntu/tools/fgbio/fgbio-2.3.0.jar}"  # set by 11_install_missing_tools.sh
 
 mkdir -p "$DATA_DIR" "$FASTQ_DIR" "$SRA_DIR" "$TMP_DIR" \
          "$REF_DIR" "$TST170_DIR" "$BRP_DIR" "$SAMPLEA_DIR" \

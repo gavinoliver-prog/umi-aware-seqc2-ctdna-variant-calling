@@ -17,13 +17,13 @@ dependencies:
   - bcftools=1.23.1
   - gatk4=4.6.2.0
   - picard=3.4.0
-  - lofreq          # low-VAF caller; no version pin — not yet installed
+  - lofreq=2.1.5    # low-VAF caller; bioconda linux-64 has 2.1.5
 
   # Consensus / UMI calling
-  # NOTE: fgbio bioconda package has been known to conflict with gatk4 in the
-  # same environment. If `conda env create` fails, remove fgbio from this list,
-  # create the env, then run 01_setup_env.sh — it will download the JAR instead.
-  - fgbio           # no version pin — not yet installed
+  # fgbio: bioconda only packages 1.4.0; we need 2.3.0 for ZipperBams and
+  # current GroupReadsByUmi flags. 01_setup_env.sh downloads the release JAR
+  # to ~/tools/fgbio/fgbio-2.3.0.jar and writes scripts/fgbio_env.sh.
+  # Do NOT add fgbio here — it conflicts with gatk4 in the same conda env.
 
   # QC
   - fastqc=0.12.1

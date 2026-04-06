@@ -1,0 +1,15 @@
+# fgbio_env.sh.template — expected format for the auto-generated fgbio_env.sh
+#
+# scripts/fgbio_env.sh is machine-local and git-ignored.
+# It is created automatically by running:
+#
+#   bash scripts/01_setup_env.sh
+#
+# That script downloads fgbio-2.3.0.jar to ~/tools/fgbio/ and writes
+# the real fgbio_env.sh pointing to it.  If you installed the JAR
+# elsewhere, copy this template and adjust the path:
+#
+#   cp scripts/fgbio_env.sh.template scripts/fgbio_env.sh
+#   # then edit FGBIO_JAR to the correct path
+#
+export FGBIO_JAR="$HOME/tools/fgbio/fgbio-2.3.0.jar"

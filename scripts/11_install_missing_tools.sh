@@ -24,6 +24,9 @@ log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 SCRIPTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 FGBIO_ENV_FILE="$SCRIPTS_DIR/fgbio_env.sh"
 
+FGBIO_VERSION="2.3.0"
+FGBIO_JAR_PATH="$HOME/tools/fgbio/fgbio-${FGBIO_VERSION}.jar"
+
 # ---------------------------------------------------------------------------
 # Locate active conda environment — must be ctdna2
 # ---------------------------------------------------------------------------
@@ -40,49 +43,30 @@ if [[ "$CONDA_ENV_NAME" != "ctdna2" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Install fgbio
-# ---------------------------------------------------------------------------
-if command -v fgbio >/dev/null 2>&1; then
-  FGBIO_VERSION="$(fgbio --version 2>&1 | head -1 || true)"
-  log "fgbio already installed: $FGBIO_VERSION — skipping."
-else
-  log "Installing fgbio via bioconda..."
-  conda install -y -c bioconda -c conda-forge fgbio
-  log "fgbio installed."
-fi
-
-# ---------------------------------------------------------------------------
-# Locate the fgbio JAR
+# Locate or download fgbio JAR (2.3.0)
 #
-# The bioconda fgbio package installs a versioned JAR under
-# $CONDA_PREFIX/share/fgbio-*/fgbio-*.jar.  We search for it and take the
-# most recent if multiple versions exist.  The wrapper at $CONDA_PREFIX/bin/fgbio
-# is NOT used for pipeline steps because it prevents passing -Xmx.
+# bioconda only packages fgbio 1.4.0 which lacks ZipperBams and current
+# GroupReadsByUmi flags. We use the upstream release JAR instead.
+# 01_setup_env.sh downloads this on first run; this script checks and
+# re-downloads if absent (e.g. running 11 standalone on a fresh machine).
+# The conda wrapper (if any) is NOT used — it prevents passing -Xmx.
 # ---------------------------------------------------------------------------
-log "Locating fgbio JAR..."
-FGBIO_JAR_PATH="$(find "$CONDA_PREFIX/share" -name "fgbio-*.jar" 2>/dev/null \
-  | grep -v '\-javadoc' | sort -V | tail -1 || true)"
-
-if [[ -z "$FGBIO_JAR_PATH" ]]; then
-  # Fallback: some bioconda builds use a non-versioned name
-  FGBIO_JAR_PATH="$(find "$CONDA_PREFIX/share" -name "fgbio.jar" 2>/dev/null \
-    | tail -1 || true)"
+if [[ -f "$FGBIO_JAR_PATH" ]]; then
+  log "fgbio JAR already present: $FGBIO_JAR_PATH — skipping download."
+else
+  log "Downloading fgbio ${FGBIO_VERSION} JAR..."
+  mkdir -p "$(dirname "$FGBIO_JAR_PATH")"
+  wget -q -O "$FGBIO_JAR_PATH" \
+    "https://github.com/fulcrumgenomics/fgbio/releases/download/${FGBIO_VERSION}/fgbio-${FGBIO_VERSION}.jar"
+  log "Downloaded: $FGBIO_JAR_PATH"
 fi
-
-if [[ -z "$FGBIO_JAR_PATH" ]]; then
-  echo "ERROR: fgbio JAR not found under $CONDA_PREFIX/share" >&2
-  echo "Try: find \$CONDA_PREFIX -name '*.jar' | grep -i fgbio" >&2
-  exit 1
-fi
-
-log "fgbio JAR: $FGBIO_JAR_PATH"
 
 # ---------------------------------------------------------------------------
 # Verify fgbio JAR works
 # ---------------------------------------------------------------------------
 log "Verifying fgbio JAR..."
-java -Xmx512m -jar "$FGBIO_JAR_PATH" --version >/dev/null 2>&1 \
-  || { echo "ERROR: fgbio JAR failed to execute: $FGBIO_JAR_PATH" >&2; exit 1; }
+java -Xmx512m -jar "$FGBIO_JAR_PATH" --version 2>&1 | grep -q "Version:" \
+  || { echo "ERROR: fgbio JAR did not print expected version string: $FGBIO_JAR_PATH" >&2; exit 1; }
 log "fgbio JAR verified."
 
 # ---------------------------------------------------------------------------

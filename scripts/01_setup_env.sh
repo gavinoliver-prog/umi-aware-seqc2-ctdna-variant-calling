@@ -107,8 +107,8 @@ else
 fi
 
 # Verify
-java -Xmx512m -jar "$FGBIO_JAR_PATH" --version >/dev/null 2>&1 \
-  || { echo "ERROR: fgbio JAR does not execute: $FGBIO_JAR_PATH" >&2; exit 1; }
+java -Xmx512m -jar "$FGBIO_JAR_PATH" --version 2>&1 | grep -q "Version:" \
+  || { echo "ERROR: fgbio JAR did not print expected version string: $FGBIO_JAR_PATH" >&2; exit 1; }
 log "fgbio JAR verified."
 
 # Write path for downstream scripts
