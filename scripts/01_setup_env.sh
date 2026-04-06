@@ -94,7 +94,7 @@ else
 fi
 
 # Verify
-java -Xmx512m -jar "$FGBIO_JAR_PATH" --version 2>&1 | grep -q "Version:" \
+{ java -Xmx512m -jar "$FGBIO_JAR_PATH" --version 2>&1 || true; } | grep -q "Version:" \
   || { echo "ERROR: fgbio JAR did not print expected version string: $FGBIO_JAR_PATH" >&2; exit 1; }
 log "fgbio JAR verified."
 
