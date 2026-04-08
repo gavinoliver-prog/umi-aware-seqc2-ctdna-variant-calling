@@ -3,7 +3,7 @@ set -euo pipefail
 source "$(dirname "$0")/00_config.sh"
 
 # =============================================================================
-# 12_group_fragments_by_coordinate.sh
+# 12_group_fragments_by_coordinate.sh  (v2 — parallel pigz compression)
 #
 # METHODOLOGICAL NOTE — READ BEFORE MODIFYING:
 #
@@ -26,8 +26,8 @@ source "$(dirname "$0")/00_config.sh"
 #   converting per-read sequencing errors into quality-weighted consensus calls.
 #
 #   Synthetic 8bp UMIs are derived deterministically from coordinates via MD5:
-#     MD5("chr:frag_start:frag_end:strand")[:8] hex nibbles -> ACGT
-#     [0-3]->A  [4-7]->C  [8-b]->G  [c-f]->T
+#     key = "chr:frag_start:frag_end:strand"
+#     umi = first 8 hex nibbles of MD5(key), each mapped: [0-3]->A [4-7]->C [8-b]->G [c-f]->T
 #     These UMIs encode NO information beyond the coordinates. They exist solely
 #     because fgbio GroupReadsByUmi requires UMI-tagged reads as input.
 #     fgbio is therefore invoked with --strategy identity (not adjacency) because
@@ -38,6 +38,24 @@ source "$(dirname "$0")/00_config.sh"
 #   This is rare but non-zero, and represents a systematic undercount of unique
 #   molecules. Quantifying the performance gap between this pipeline and a true
 #   UMI-aware pipeline motivates preserving UMIs during archival.
+#
+# PERFORMANCE DESIGN (v2):
+#   Original bottleneck: Python's gzip.open() compressing 4 streams serially.
+#   Fix: Python writes uncompressed bytes to 4 named pipes (FIFOs); 4 independent
+#   pigz processes compress in parallel. Python becomes I/O-bound (fast) rather
+#   than CPU-bound on compression (slow). Both samples run in parallel via &.
+#
+#   Steps 1+2 are now a single pipeline (BWA → samtools view -L → samtools sort -n)
+#   eliminating the intermediate coordinate-sorted BAM and index.
+#
+#   Fallback if still too slow: split namesorted BAM by chromosome prefix and
+#   run Python workers in parallel, merging output with cat. Not implemented
+#   here because the pigz design should be sufficient on 8+ cores.
+#
+# PARALLELISM CONTROL:
+#   PARALLEL_SAMPLES=1 (default): tumor and normal processed simultaneously.
+#     Requires ~14GB RAM free (two concurrent bwa mem processes, ~6-7GB each).
+#   PARALLEL_SAMPLES=0: serial execution, lower peak memory.
 #
 # Output:
 #   ${run}_ontarget_R1/R2.fastq.gz  -- standard FASTQs for Arms A/B (fair baseline)
@@ -50,15 +68,34 @@ log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
 require_cmd bwa
 require_cmd samtools
+require_cmd pigz
 require_cmd python3
 require_file "$REF_FASTA"
 require_file "$TARGET_BED"
 
 mkdir -p "$RESULTS_DIR/consensus_metrics"
 
+# -----------------------------------------------------------------------------
+# RAM availability check
+#
+# Parallel BWA-MEM (two concurrent processes) requires ~6-7GB each plus
+# sort buffers. If available RAM is below 14GB, warn the user and suggest
+# running serially via PARALLEL_SAMPLES=0.
+# This is advisory only — the script does not abort. The machine may still
+# have enough RAM after the OS reclaims cached pages.
+# -----------------------------------------------------------------------------
+available_kb=$(awk '/MemAvailable/ {print $2}' /proc/meminfo)
+available_gb=$(( available_kb / 1024 / 1024 ))
+if [[ "${PARALLEL_SAMPLES:-1}" == "1" && $available_gb -lt 14 ]]; then
+  log "WARNING: Only ~${available_gb}GB RAM currently available."
+  log "WARNING: Parallel BWA-MEM (2 samples × ~6-7GB) may exhaust memory and OOM."
+  log "WARNING: If the run fails, rerun with PARALLEL_SAMPLES=0 for serial execution."
+fi
+
 # Write the Python UMI-assignment script to a temp file.
 # Reads name-sorted SAM from stdin (piped via samtools view -h).
-# Outputs standard and UMI-prefixed FASTQ pairs plus QC metrics.
+# Writes uncompressed FASTQ to the 4 file paths given as arguments.
+# Compression is handled externally by pigz reading from named pipes.
 write_umi_script() {
   local dest="$1"
   cat > "$dest" << 'PYEOF'
@@ -66,7 +103,8 @@ write_umi_script() {
 Assign deterministic synthetic UMIs to read pairs based on fragment coordinates.
 
 Input:  name-sorted SAM on stdin (samtools view -h pipe)
-Output: standard FASTQs (Arms A/B) and UMI-prefixed FASTQs (Arms C/D)
+Output: uncompressed FASTQ written to 4 file paths (may be named pipes/FIFOs).
+        Compression is handled by the caller (pigz).
 
 UMI derivation:
   key = "chr:frag_start:frag_end:strand"   (strand = orientation of read 1)
@@ -78,7 +116,7 @@ fgbio read structure: 8M+T (R1), +T (R2)
   The 8bp UMI is prepended to R1 sequence. R2 is unchanged.
   Synthetic UMI base quality is set to Phred 40 (ASCII 'I').
 """
-import sys, gzip, hashlib, collections, argparse
+import sys, hashlib, collections, argparse
 
 # Map each of the 16 hex characters to one of 4 ACGT bases
 HEX_TO_BASE = {}
@@ -91,6 +129,9 @@ def coord_umi(chrom, start, end, strand):
     return "".join(HEX_TO_BASE[c] for c in hashlib.md5(key.encode()).hexdigest()[:8])
 
 def write_record(fh, name, seq, qual):
+    # fh is a binary file object (open in "wb" mode) pointing to a named pipe.
+    # Writing bytes avoids a text-mode encode round-trip and is compatible
+    # with pigz reading raw bytes from the other end of the pipe.
     fh.write(f"@{name}\n{seq}\n+\n{qual}\n".encode())
 
 ap = argparse.ArgumentParser()
@@ -106,13 +147,16 @@ coord_groups = collections.Counter()  # coord_key -> pair count (= family size)
 total_pairs  = 0
 pending      = {}  # read_name -> (is_read1, is_rev, chrom, pos, seq, qual)
 # Note on read names: BWA-MEM does not append /1 or /2 to SAM query names;
-# the R1/R2 distinction is encoded in the FLAG field (bits 64/128). The
-# pending dict therefore keys on the bare read name from field 0.
+# the R1/R2 distinction is encoded in the FLAG field (bits 64/128).
 
-with gzip.open(args.out_std_r1, "wb") as s1, \
-     gzip.open(args.out_std_r2, "wb") as s2, \
-     gzip.open(args.out_umi_r1, "wb") as u1, \
-     gzip.open(args.out_umi_r2, "wb") as u2:
+# Open all 4 outputs as binary — works for both regular files and named pipes.
+# Named pipes: pigz readers are already running before Python opens these;
+# open() blocks until the other end (pigz) also opens the pipe, which
+# guarantees no data is lost even before Python's first write.
+with open(args.out_std_r1, "wb") as s1, \
+     open(args.out_std_r2, "wb") as s2, \
+     open(args.out_umi_r1, "wb") as u1, \
+     open(args.out_umi_r2, "wb") as u2:
 
     for line in sys.stdin:
         if line.startswith("@"):
@@ -122,8 +166,8 @@ with gzip.open(args.out_std_r1, "wb") as s1, \
         flag = int(f[1])
 
         # Skip unmapped, mate-unmapped, secondary, supplementary.
-        # -F 2048 in samtools view should have removed supplementary already,
-        # but guard here too to prevent pending dict accumulation.
+        # samtools view -F 2316 upstream removes most of these, but
+        # guard here to prevent pending dict accumulation on edge cases.
         if flag & 4 or flag & 8 or flag & 256 or flag & 2048:
             continue
 
@@ -177,8 +221,8 @@ with gzip.open(args.out_std_r1, "wb") as s1, \
             write_record(u2, f"{name}/2", seq2, qual2)
 
 # Safety valve: unpaired reads left in pending were never written.
-# This should be zero for a clean name-sorted BAM. Non-zero indicates
-# chimeric reads, truncated input, or a name-sort anomaly.
+# Should be zero for a clean name-sorted BAM. Non-zero indicates chimeric
+# reads, truncated input, or a name-sort anomaly.
 if pending:
     print(f"WARNING: {len(pending)} unpaired reads were not written to output",
           file=sys.stderr)
@@ -227,91 +271,164 @@ process_sample() {
     return 0
   fi
 
-  local tmp_bam="$TMP_DIR/${run}_tmp_coord.bam"
   local tmp_ontarget="$TMP_DIR/${run}_ontarget_namesort.bam"
   local py_script="$TMP_DIR/assign_umis_${run}_$$.py"
+  local pipe_dir="$TMP_DIR/${run}_pipes_$$"
+
+  # Clean up named pipes and partial outputs on any failure in this function
+  cleanup() {
+    local exit_code=$?
+    [[ $exit_code -ne 0 ]] && log "[$label] ERROR: cleaning up partial outputs (exit $exit_code)"
+    rm -f "${out_std_r1}.tmp" "${out_std_r2}.tmp" "${out_umi_r1}.tmp" "${out_umi_r2}.tmp"
+    rm -rf "$pipe_dir"
+  }
+  trap cleanup EXIT
 
   write_umi_script "$py_script"
 
   # -------------------------------------------------------------------------
-  # Step 1: Temporary coordinate-extraction alignment
+  # Steps 1+2 combined: Align → filter on-target → name-sort
   #
-  # Aligns the full FASTQ to hg38 to obtain genomic coordinates per read pair.
-  # This BAM is temporary — deleted after UMI assignment. Pipeline BAMs for
-  # Arms A/B and C/D are produced separately in scripts 13 and 14.
+  # v1 used two separate steps: coord-sort+index (for samtools view -L),
+  # then view -L | sort -n. This required writing and reading a full
+  # coordinate-sorted BAM (~30-40GB for these samples).
+  #
+  # v2 streams directly: BWA → samtools view -L → samtools sort -n.
+  # samtools view -L on a stream scans all records without an index.
+  # For panel sequencing (BRP: ~90% on-target rate), the filter eliminates
+  # most reads before they hit the sort buffer, reducing sort memory and I/O.
+  #
+  # -F 2316: skip unmapped(4) + mate-unmapped(8) + secondary(256) + suppl(2048)
   # -------------------------------------------------------------------------
-  if [[ ! -f "${tmp_bam}.bai" ]]; then
-    log "[$label] Step 1: Aligning to hg38 for coordinate extraction..."
+  if [[ ! -f "$tmp_ontarget" ]]; then
+    log "[$label] Steps 1-2: Align → filter on-target → name-sort (single pipeline)..."
     bwa mem -t "$THREADS" \
       -R "@RG\tID:${run}\tSM:${label}\tPL:ILLUMINA\tLB:lib1" \
       "$REF_FASTA" "$r1" "$r2" \
-      | samtools sort -@ "$THREADS" -T "$TMP_DIR/${run}_sort" -o "$tmp_bam"
-    samtools index "$tmp_bam"
-    log "[$label] Temporary alignment complete."
+      | samtools view -u -f 1 -F 2316 -L "$TARGET_BED" \
+      | samtools sort -n -@ "$THREADS" -m 4G \
+                      -T "$TMP_DIR/${run}_nsort" \
+                      -o "$tmp_ontarget"
+    log "[$label] Name-sorted on-target BAM ready."
   else
-    log "[$label] Temporary BAM exists — skipping alignment."
+    log "[$label] Name-sorted BAM exists — skipping alignment."
   fi
 
   # -------------------------------------------------------------------------
-  # Step 2: Filter to on-target read pairs overlapping the BRP panel BED
+  # Steps 3-6: UMI assignment with named-pipe + pigz parallel compression
   #
-  # -f 1  : read is paired
-  # -F 12 : neither read nor mate is unmapped (bit 4 OR bit 8)
-  # -L    : read position overlaps target BED
+  # Architecture:
+  #   [samtools view] → [Python] → [FIFO s1] → [pigz] → out_std_r1.fastq.gz
+  #                              → [FIFO s2] → [pigz] → out_std_r2.fastq.gz
+  #                              → [FIFO u1] → [pigz] → out_umi_r1.fastq.gz
+  #                              → [FIFO u2] → [pigz] → out_umi_r2.fastq.gz
   #
-  # NOTE: -L checks only the read's own alignment position, not its mate's.
-  # A pair where R1 is on-target and R2 is off-target (or vice versa) will
-  # be included based on the on-target read. For amplicon panel sequencing
-  # (like BRP), where reads are tightly enriched to target regions, this is
-  # acceptable — the vast majority of pairs will have both mates on-target.
-  # For hybrid capture, where insert sizes are larger and mate positions more
-  # variable, a two-pass approach (extract names, then fetch both mates) would
-  # be more correct. Off-target mates will appear as orphans in the name-sorted
-  # BAM and are silently skipped by the Python pending-dict logic.
+  # Python writes uncompressed bytes to each FIFO. Each pigz process reads
+  # from its own FIFO and compresses independently. The 4 pigz processes run
+  # concurrently so compression throughput is 4× that of a single gzip.
   #
-  # Name-sort so the Python script can process each pair together.
+  # pigz thread count: THREADS/4, floored to 1, capped at 4. When two
+  # process_sample calls run in parallel (tumor + normal), the combined
+  # pigz load is 2×(4 streams × pigz_t). Capping at 4 prevents the 8-core
+  # machine from being saturated by compression alone.
   # -------------------------------------------------------------------------
-  if [[ ! -f "$tmp_ontarget" ]]; then
-    log "[$label] Step 2: Filtering to on-target read pairs..."
-    samtools view -b -L "$TARGET_BED" -f 1 -F 12 "$tmp_bam" \
-      | samtools sort -n -@ "$THREADS" -T "$TMP_DIR/${run}_nsort" -o "$tmp_ontarget"
-    log "[$label] On-target filtering complete."
-  else
-    log "[$label] On-target BAM exists — skipping filter."
-  fi
+  log "[$label] Steps 3-6: UMI assignment + parallel pigz compression..."
 
-  # -------------------------------------------------------------------------
-  # Steps 3-6: Synthetic UMI assignment and FASTQ output
-  #
-  # samtools view -h pipes header + alignments to Python, which:
-  #   3. Groups pairs by read name (name-sorted BAM guarantees adjacency)
-  #   4. Computes fragment coordinates, derives deterministic 8bp UMI via MD5
-  #   5. Writes UMI-prefixed FASTQs for Arms C/D (fgbio read structure 8M+T +T)
-  #   6. Writes standard FASTQs for Arms A/B (same reads, no modification)
-  #      Emits family size distribution and summary QC metrics
-  # -------------------------------------------------------------------------
-  log "[$label] Steps 3-6: Assigning UMIs and writing FASTQs..."
+  mkdir -p "$pipe_dir"
+  local p_std_r1="$pipe_dir/std_r1"
+  local p_std_r2="$pipe_dir/std_r2"
+  local p_umi_r1="$pipe_dir/umi_r1"
+  local p_umi_r2="$pipe_dir/umi_r2"
+  mkfifo "$p_std_r1" "$p_std_r2" "$p_umi_r1" "$p_umi_r2"
+
+  local pigz_t=$(( THREADS / 4 ))
+  [[ $pigz_t -lt 1 ]] && pigz_t=1
+  [[ $pigz_t -gt 4 ]] && pigz_t=4
+
+  # Start 4 pigz compressors in background, each dedicated to one FIFO.
+  # Write to .tmp paths; renamed to final names only on full success to
+  # prevent a partial compressed file from passing the idempotency check.
+  pigz -p "$pigz_t" < "$p_std_r1" > "${out_std_r1}.tmp" & local pid_s1=$!
+  pigz -p "$pigz_t" < "$p_std_r2" > "${out_std_r2}.tmp" & local pid_s2=$!
+  pigz -p "$pigz_t" < "$p_umi_r1" > "${out_umi_r1}.tmp" & local pid_u1=$!
+  pigz -p "$pigz_t" < "$p_umi_r2" > "${out_umi_r2}.tmp" & local pid_u2=$!
+
+  # Python opens each FIFO (blocks until the pigz reader above has opened
+  # the other end — guaranteed since all 4 pigz processes are already running).
+  # On exit, Python closes all 4 FIFOs; each pigz reader reaches EOF, flushes
+  # its compressed output, and exits cleanly.
   samtools view -h "$tmp_ontarget" \
     | python3 "$py_script" \
-        --out-std-r1  "$out_std_r1" \
-        --out-std-r2  "$out_std_r2" \
-        --out-umi-r1  "$out_umi_r1" \
-        --out-umi-r2  "$out_umi_r2" \
+        --out-std-r1  "$p_std_r1" \
+        --out-std-r2  "$p_std_r2" \
+        --out-umi-r1  "$p_umi_r1" \
+        --out-umi-r2  "$p_umi_r2" \
         --metrics     "$RESULTS_DIR/consensus_metrics/${label}_family_sizes.tsv" \
         --summary     "$RESULTS_DIR/consensus_metrics/${label}_fragment_summary.tsv"
 
+  # Wait for all pigz processes; any non-zero exit means corrupted output
+  local fail=0
+  wait "$pid_s1" || { log "[$label] ERROR: pigz failed on std_r1"; fail=1; }
+  wait "$pid_s2" || { log "[$label] ERROR: pigz failed on std_r2"; fail=1; }
+  wait "$pid_u1" || { log "[$label] ERROR: pigz failed on umi_r1"; fail=1; }
+  wait "$pid_u2" || { log "[$label] ERROR: pigz failed on umi_r2"; fail=1; }
+
+  if [[ $fail -ne 0 ]]; then
+    log "[$label] Compression failed — partial outputs will be removed by cleanup trap"
+    return 1
+  fi
+
+  # Atomically rename .tmp files to final names only after all 4 succeed
+  mv "${out_std_r1}.tmp" "$out_std_r1"
+  mv "${out_std_r2}.tmp" "$out_std_r2"
+  mv "${out_umi_r1}.tmp" "$out_umi_r1"
+  mv "${out_umi_r2}.tmp" "$out_umi_r2"
+
+  rm -rf "$pipe_dir"
   log "[$label] QC metrics written to $RESULTS_DIR/consensus_metrics/"
 
-  # Temporary alignment BAMs are large — remove them now
-  log "[$label] Cleaning up temporary files..."
-  rm -f "$tmp_bam" "${tmp_bam}.bai" "$tmp_ontarget" "$py_script"
+  log "[$label] Cleaning up temporary alignment BAM..."
+  rm -f "$tmp_ontarget" "$py_script"
+
+  # Disarm the cleanup trap — outputs are complete
+  trap - EXIT
 
   log "[$label] Complete."
   log "  Standard FASTQs (Arms A/B): ${run}_ontarget_R1/R2.fastq.gz"
   log "  UMI FASTQs     (Arms C/D): ${run}_umi_R1/R2.fastq.gz"
 }
 
-process_sample "$TUMOR_RUN"  "tumor"
-process_sample "$NORMAL_RUN" "normal"
+# =============================================================================
+# Run tumor and normal samples — parallel (default) or serial.
+#
+# PARALLEL_SAMPLES=1 (default):
+#   Both samples processed simultaneously. Peak CPU = 2×THREADS during
+#   alignment; peak RAM = ~14GB (two concurrent bwa mem + sort buffers).
+#   Total wall time is lower because alignment and Python/pigz phases of
+#   each sample overlap with the other sample's processing.
+#
+# PARALLEL_SAMPLES=0:
+#   Serial execution. Suitable for memory-constrained systems (<14GB free)
+#   or for cleaner log output. Set in environment or prefix the command:
+#     PARALLEL_SAMPLES=0 bash scripts/12_group_fragments_by_coordinate.sh
+# =============================================================================
+log "PARALLEL_SAMPLES=${PARALLEL_SAMPLES:-1} (available RAM: ~${available_gb}GB)"
+
+fail=0
+if [[ "${PARALLEL_SAMPLES:-1}" == "1" ]]; then
+  process_sample "$TUMOR_RUN"  "tumor"  & tumor_pid=$!
+  process_sample "$NORMAL_RUN" "normal" & normal_pid=$!
+  wait "$tumor_pid"  || { log "ERROR: tumor sample processing failed";  fail=1; }
+  wait "$normal_pid" || { log "ERROR: normal sample processing failed"; fail=1; }
+else
+  log "Running serially (PARALLEL_SAMPLES=0)..."
+  process_sample "$TUMOR_RUN"  "tumor"  || fail=1
+  process_sample "$NORMAL_RUN" "normal" || fail=1
+fi
+
+if [[ $fail -ne 0 ]]; then
+  log "ERROR: one or more samples failed — check logs above"
+  exit 1
+fi
 
 log "Script 12 complete. FASTQs ready for scripts 13 (Arms A/B) and 14 (Arms C/D)."
