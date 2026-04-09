@@ -156,7 +156,9 @@ process_sample() {
     java -Xmx"${JAVA_XMX}" -jar "$FGBIO_JAR" GroupReadsByUmi \
       --input "$merged_bam" \
       --output "$grouped_bam" \
-      --strategy identity \
+      --strategy Identity \
+      --edits 0 \
+      --threads "$THREADS" \
       --family-size-histogram "${out_dir}/${label}.grbu_family_sizes.txt"
     rm -f "$merged_bam" "${merged_bam}.bai"
   else
