@@ -66,7 +66,6 @@ process_sample() {
 
   # Intermediate BAMs in TMP_DIR — all cleaned up at end
   local ubam="$TMP_DIR/${run}_cd_ubam.bam"
-  local mapped_nsort="$TMP_DIR/${run}_cd_mapped_nsort.bam"
   local merged_bam="$TMP_DIR/${run}_cd_merged.bam"
   local grouped_bam="$TMP_DIR/${run}_cd_grouped.bam"
   local consensus_raw="$TMP_DIR/${run}_cd_consensus_raw.bam"
@@ -98,46 +97,39 @@ process_sample() {
   fi
 
   # -------------------------------------------------------------------------
-  # Step 2a: BWA-MEM alignment
+  # Step 2: Align and merge UMI tags in a single pipeline
   #
-  # samtools fastq converts the uBAM back to FASTQ for BWA-MEM.
-  # The aligned output is name-sorted for ZipperBams in step 2b.
-  # We do NOT use -C (pass FASTQ comments) here — ZipperBams handles tag
-  # transfer from the uBAM, so the mapped BAM only needs alignment coordinates.
+  # samtools fastq converts the uBAM to interleaved FASTQ for BWA-MEM (-p).
+  # BWA output is piped directly into ZipperBams via stdin (--input defaults
+  # to /dev/stdin), which re-attaches the RX and other tags from the uBAM to
+  # the aligned records. The uBAM is read twice — once here for FASTQ
+  # generation and once by ZipperBams for tag merging — but both reads use
+  # the same queryname order, so ZipperBams sees consistent ordering.
+  #
+  # The previous two-step approach (BWA → name-sort → ZipperBams) failed
+  # because samtools sort -n does not guarantee the same tie-breaking order
+  # as FastqToBam's internal sort, causing ZipperBams read-name mismatches.
+  #
+  # --compression 0 is a fgbio global flag (after the JAR, before the tool
+  # name) that disables output compression on stdout, saving CPU on data
+  # that samtools sort will immediately re-read and re-compress.
   # -------------------------------------------------------------------------
-  if [[ ! -f "$mapped_nsort" ]]; then
-    log "[$label] Step 2a: BWA-MEM alignment..."
-    samtools fastq -N "$ubam" \
+  if [[ ! -f "$merged_bam" ]]; then
+    log "[$label] Step 2: Align + ZipperBams (single pipeline)..."
+    samtools fastq -N -F 0x900 "$ubam" \
       | bwa mem -t "$THREADS" -K 100000000 -p \
           -R "@RG\tID:${run}\tSM:${label}\tPL:ILLUMINA\tLB:lib1" \
           "$REF_FASTA" - \
-      | samtools sort -n -@ "$THREADS" -T "$TMP_DIR/${run}_cd_nsort" -o "$mapped_nsort"
-  else
-    log "[$label] Step 2a: Mapped BAM exists — skipping."
-  fi
-
-  # -------------------------------------------------------------------------
-  # Step 2b: ZipperBams — merge UMI tags from uBAM into aligned BAM
-  #
-  # BWA-MEM discards BAM tags from input. ZipperBams re-attaches tags from
-  # the original uBAM (including RX) to the aligned records by matching
-  # read names. Both inputs must be in the same query-name order.
-  # Output is query-name sorted; we coordinate-sort afterward for GRBU.
-  # -------------------------------------------------------------------------
-  if [[ ! -f "$merged_bam" ]]; then
-    log "[$label] Step 2b: ZipperBams — merging UMI tags into aligned BAM..."
-    java -Xmx"${JAVA_XMX}" -jar "$FGBIO_JAR" ZipperBams \
-      --unmapped "$ubam" \
-      --input "$mapped_nsort" \
-      --ref "$REF_FASTA" \
-      --output "$merged_bam"
-    # Coordinate-sort for GroupReadsByUmi
-    samtools sort -@ "$THREADS" -T "$TMP_DIR/${run}_cd_coord" -o "${merged_bam%.bam}.coord.bam" "$merged_bam"
-    mv "${merged_bam%.bam}.coord.bam" "$merged_bam"
+      | java -Xmx"${JAVA_XMX}" -jar "$FGBIO_JAR" --compression 0 ZipperBams \
+          --unmapped "$ubam" \
+          --ref "$REF_FASTA" \
+          --output /dev/stdout \
+      | samtools sort -@ "$THREADS" \
+          -T "$TMP_DIR/${run}_cd_coord" \
+          -o "$merged_bam"
     samtools index "$merged_bam"
-    rm -f "$mapped_nsort"
   else
-    log "[$label] Step 2b: Merged BAM exists — skipping."
+    log "[$label] Step 2: Merged BAM exists — skipping."
   fi
 
   # -------------------------------------------------------------------------
