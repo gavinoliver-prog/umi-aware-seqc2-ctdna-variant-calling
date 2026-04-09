@@ -128,9 +128,9 @@ process_sample() {
     log "[$label] Step 2b: ZipperBams — merging UMI tags into aligned BAM..."
     java -Xmx"${JAVA_XMX}" -jar "$FGBIO_JAR" ZipperBams \
       --unmapped "$ubam" \
-      --mapped "$mapped_nsort" \
-      --output "$merged_bam" \
-      --tags RX
+      --input "$mapped_nsort" \
+      --ref "$REF_FASTA" \
+      --output "$merged_bam"
     # Coordinate-sort for GroupReadsByUmi
     samtools sort -@ "$THREADS" -T "$TMP_DIR/${run}_cd_coord" -o "${merged_bam%.bam}.coord.bam" "$merged_bam"
     mv "${merged_bam%.bam}.coord.bam" "$merged_bam"
