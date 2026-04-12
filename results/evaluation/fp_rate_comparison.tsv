@@ -1,0 +1,7 @@
+arm	caller	fp_count	known_neg_mb	fp_rate_per_mb
+A	Mutect2	4	0.053185	75.21
+B	Mutect2	0	0.053185	0.00
+C	Mutect2	5	0.053185	94.01
+D	Mutect2	1	0.053185	18.80
+A	LoFreq	204	0.053185	3835.67
+C	LoFreq	89	0.053185	1673.40

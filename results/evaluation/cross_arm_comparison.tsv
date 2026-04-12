@@ -1,0 +1,5 @@
+comparison	description	tp_new	tp_old	tp_delta	sens_new	sens_old	sens_delta	fp_mb_new	fp_mb_old	fp_mb_delta	tp_gained	tp_lost	tp_shared
+C_vs_A	Consensus benefit tumor-only (C vs A)	6	0	6	0.0263	0.0000	+0.0263	94.01	75.21	+18.80	6	0	0
+D_vs_B	Consensus benefit tumor-normal (D vs B)	5	1	4	0.0219	0.0044	+0.0175	18.80	0.00	+18.80	5	1	0
+B_vs_A	Paired-normal over-suppression (B vs A)	1	0	1	0.0044	0.0000	+0.0044	0.00	75.21	-75.21	1	0	0
+D_vs_C	Value of paired normal with consensus (D vs C)	5	6	-1	0.0219	0.0263	-0.0044	18.80	94.01	-75.21	3	4	2

@@ -25,8 +25,15 @@ export REF_FASTA="${REF_FASTA:-$REF_DIR/Homo_sapiens_assembly38.fasta}"
 export TARGET_BED="${TARGET_BED:-$BRP_DIR/BRP2_liftover_hg19tohg38.bed}"
 export GNOMAD_RESOURCE="${GNOMAD_RESOURCE:-$REF_DIR/af-only-gnomad.hg38.vcf.gz}"
 export PON_RESOURCE="${PON_RESOURCE:-$REF_DIR/1000g_pon.hg38.vcf.gz}"
-export KNOWN_POSITIVES_VCF="${KNOWN_POSITIVES_VCF:-$SAMPLEA_DIR/KnownPositives_hg38.on_target.vcf.gz}"
-export ON_TARGET_TRUTH_VCF="${ON_TARGET_TRUTH_VCF:-$SAMPLEA_DIR/KnownPositives_hg38.on_target.vcf.gz}"
+# Truth set: 228 known positives reduced to 86 somatic candidates
+# Filtering: variants present in gnomAD at AF >= 0.001 excluded
+# Rationale: 124 (54%) of original 228 are common germline SNPs
+#            correctly filtered by Mutect2 with gnomAD resource
+# Remaining 86 are not in gnomAD or extremely rare (AF < 0.001)
+# All 86 are Tier 3/4 (<0.8% expected VAF in Ef, <4% in Df)
+export KNOWN_POSITIVES_SOMATIC_VCF="${KNOWN_POSITIVES_SOMATIC_VCF:-$SAMPLEA_DIR/KnownPositives_hg38.somatic_only.vcf.gz}"
+export KNOWN_POSITIVES_VCF="${KNOWN_POSITIVES_VCF:-$SAMPLEA_DIR/KnownPositives_hg38.somatic_only.vcf.gz}"
+export ON_TARGET_TRUTH_VCF="${ON_TARGET_TRUTH_VCF:-$SAMPLEA_DIR/KnownPositives_hg38.somatic_only.vcf.gz}"
 
 export MIX01_RUN="${MIX01_RUN:-SRR13201012}"
 export MIX124_RUN="${MIX124_RUN:-SRR13200966}"
