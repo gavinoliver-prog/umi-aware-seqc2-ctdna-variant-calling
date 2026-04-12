@@ -278,7 +278,7 @@ process_sample() {
   # Clean up named pipes and partial outputs on any failure in this function
   cleanup() {
     local exit_code=$?
-    [[ $exit_code -ne 0 ]] && log "[$label] ERROR: cleaning up partial outputs (exit $exit_code)"
+    [[ $exit_code -ne 0 ]] && log "[${label:-unknown}] ERROR: cleaning up partial outputs (exit $exit_code)"
     rm -f "${out_std_r1}.tmp" "${out_std_r2}.tmp" "${out_umi_r1}.tmp" "${out_umi_r2}.tmp"
     rm -rf "$pipe_dir"
   }
@@ -306,7 +306,7 @@ process_sample() {
       -R "@RG\tID:${run}\tSM:${label}\tPL:ILLUMINA\tLB:lib1" \
       "$REF_FASTA" "$r1" "$r2" \
       | samtools view -u -f 1 -F 2316 -L "$TARGET_BED" \
-      | samtools sort -n -@ "$THREADS" -m 4G \
+      | samtools sort -n -@ "$THREADS" -m 1G \
                       -T "$TMP_DIR/${run}_nsort" \
                       -o "$tmp_ontarget"
     log "[$label] Name-sorted on-target BAM ready."
