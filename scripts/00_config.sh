@@ -29,11 +29,16 @@ export KNOWN_POSITIVES_VCF="${KNOWN_POSITIVES_VCF:-$SAMPLEA_DIR/KnownPositives_h
 export ON_TARGET_TRUTH_VCF="${ON_TARGET_TRUTH_VCF:-$SAMPLEA_DIR/KnownPositives_hg38.on_target.vcf.gz}"
 
 export MIX01_RUN="${MIX01_RUN:-SRR13201012}"
-export MIX124_RUN="${MIX124_RUN:-SRR13200999}"
+export MIX124_RUN="${MIX124_RUN:-SRR13201008}"
 
 # Semantic aliases for the 4-arm design
-export TUMOR_RUN="${TUMOR_RUN:-SRR13200999}"   # Ef — 1:24 tumor:normal (~4% tumor fraction)
-export NORMAL_RUN="${NORMAL_RUN:-SRR13201012}" # Bf — pure normal
+# Df = Sample A diluted 1:4 into Sample B (SRR13201008)
+# Expected VAF in Df = Sample A VAF / 5
+# At 20% tumor fraction, Tier 1 variants appear at ~10-20% VAF
+# This is within reliable detection range for standard calling
+export TUMOR_RUN="${TUMOR_RUN:-SRR13201008}"   # Df — 1:4 tumor:normal (~20% tumor fraction)
+export NORMAL_RUN="${NORMAL_RUN:-SRR13201012}" # Bf — pure normal (unchanged)
+export DILUTION_FACTOR="${DILUTION_FACTOR:-5}" # 1:4 dilution = 1/5
 
 # Four-arm output directories
 export ARM_A_DIR="${ARM_A_DIR:-$RESULTS_DIR/arm_a_standard_tumor_only}"
