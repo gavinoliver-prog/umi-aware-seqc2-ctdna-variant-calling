@@ -101,3 +101,36 @@ Note: VAF tier counts based on original 228-variant truth set. After gnomAD
 germline filtering, 86 somatic candidates remain (28 Tier 3, 58 Tier 4).
 At Df dilution, Tier 3 somatic candidates appear at 0.2-4% VAF — within 
 the detectable range for standard calling with sufficient depth.
+
+### Truth Set Refinement: Germline Filtering
+
+Initial analysis revealed that the SEQC2 known positives VCF contains 
+a mixture of germline and somatic variants. After annotating with gnomAD 
+(af-only-gnomad.hg38.vcf.gz) and filtering variants at population 
+frequency AF >= 0.001:
+
+| Category | Count | Fraction | Notes |
+|----------|-------|----------|-------|
+| Common germline (gnomAD AF >1%) | 124 | 54% | Correctly filtered by Mutect2 germline model |
+| Rare germline (gnomAD AF 0.001-1%) | 18 | 8% | Partially filtered |
+| Somatic candidates (gnomAD AF <0.001 or absent) | 86 | 38% | Retained for evaluation |
+| Total | 228 | 100% | |
+
+The 124 common germline variants were correctly identified and filtered 
+by Mutect2 using the gnomAD germline resource — this is expected and 
+appropriate behaviour. The SEQC2 truth set was designed for broad 
+benchmarking across platforms and includes germline variants as 
+"known positives" because they are measurable in Sample A. However 
+for somatic variant calling evaluation they should be excluded.
+
+The refined somatic-only truth set (86 variants) is stored at:
+  ref/SampleA_ref/KnownPositives_hg38.somatic_only.vcf.gz
+
+All 86 somatic candidates fall in Tier 3 (28 variants, Sample A VAF 
+5-20%) or Tier 4 (58 variants, Sample A VAF <5%). At Df dilution 
+(1:4), expected VAFs are:
+  Tier 3: 1-4%  → detectable by standard calling at sufficient depth
+  Tier 4: <1%   → challenging, consensus calling expected to help
+
+This VAF range is clinically relevant for ctDNA MRD monitoring where 
+tumor fractions of 1-5% are typical in early relapse detection.
