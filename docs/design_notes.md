@@ -65,3 +65,39 @@ Key comparisons:
 - Arm D vs B: UMI benefit in tumor-normal setting
 - Arm B vs A: paired-normal over-suppression (variants lost due to shared background)
 - Arm D vs C: added value of paired normal when using UMI consensus
+
+### Final Sample Selection and Accession Mapping
+
+After initial analysis with Ef (1:24 dilution, ~4% tumor fraction), all evaluable 
+somatic variants were found to be at <0.8% expected VAF in the sequenced sample — 
+below the reliable detection threshold for standard somatic calling. Df (1:4 dilution, 
+~20% tumor fraction) was selected as the tumor sample to provide detectable somatic 
+signal across multiple VAF tiers.
+
+Site matching was prioritised: Bf normal (Site 25) is paired with Df Site 25 LIB1 
+to minimise site-specific technical variation in tumor-normal calling.
+
+| Sample | Role | Dilution | Tumor Fraction | SAMN | SRX | SRR | Library | Site |
+|--------|------|----------|----------------|------|-----|-----|---------|------|
+| Df | Tumor | 1:4 | ~20% | SAMN16786374 | SRX9634502 | SRR13200966 | SampleDf_BRP2_ST25_25ng_LIB1 | 25 |
+| Bf | Normal | 0:1 | 0% | SAMN16786376 | - | SRR13201012 | SampleBf_BRP2_ST25_25ng_LIB1 | 25 |
+
+Previously evaluated (not used in final pipeline):
+| Ef | - | 1:24 | ~4% | SAMN16786375 | SRX9634460 | SRR13200999 | SampleEf_BRP2_ST25_25ng_LIB1 | 25 |
+| Df (Site 26) | - | 1:4 | ~20% | SAMN16786374 | SRX9634460 | SRR13201008 | SampleDf_BRP2_ST26_25ng_LIB1 | 26 |
+
+### Expected VAF in Df
+
+Expected VAF in Df = Sample A VAF / 5 (1:4 dilution factor)
+
+| Tier | Sample A VAF | Expected Df VAF | Variant count | Interpretation |
+|------|-------------|-----------------|---------------|----------------|
+| 1 | ≥50% | ≥10% | 30 | Easily detectable by standard calling |
+| 2 | 20–50% | 4–10% | 39 | Detectable by standard calling |
+| 3 | 5–20% | 1–4% | 76 | Detectable with good sensitivity |
+| 4 | <5% | <1% | 83 | Challenging, UMI consensus may help |
+
+Note: VAF tier counts based on original 228-variant truth set. After gnomAD 
+germline filtering, 86 somatic candidates remain (28 Tier 3, 58 Tier 4).
+At Df dilution, Tier 3 somatic candidates appear at 0.2-4% VAF — within 
+the detectable range for standard calling with sufficient depth.
