@@ -57,3 +57,24 @@ __pycache__/
 *.zip
 *.xlsx
 *.csi
+
+# Results — exclude large intermediate files but keep final outputs
+results/**/*.bam
+results/**/*.bai
+results/**/*.cram
+results/**/*.unfiltered.vcf.gz
+results/**/*.unfiltered.vcf.gz.tbi
+
+# Keep final filtered VCFs and evaluation outputs
+!results/**/*.filtered.vcf.gz
+!results/**/*.filtered.vcf.gz.tbi
+!results/**/lofreq.vcf.gz
+!results/**/lofreq.vcf.gz.tbi
+!results/evaluation/*.tsv
+!results/consensus_metrics/*.tsv
+!results/REPORT.md
+
+# Exclude large temp files
+data/tmp/
+data/fastq/*_ontarget_*.fastq.gz
+data/fastq/*_umi_*.fastq.gz
