@@ -24,7 +24,7 @@ export JAVA_XMX="${JAVA_XMX:-24g}"
 export REF_FASTA="${REF_FASTA:-$REF_DIR/Homo_sapiens_assembly38.fasta}"
 export TARGET_BED="${TARGET_BED:-$BRP_DIR/BRP2_liftover_hg19tohg38.bed}"
 export GNOMAD_RESOURCE="${GNOMAD_RESOURCE:-$REF_DIR/af-only-gnomad.hg38.vcf.gz}"
-export PON_RESOURCE="${PON_RESOURCE:-}"
+export PON_RESOURCE="${PON_RESOURCE:-$REF_DIR/1000g_pon.hg38.vcf.gz}"
 export KNOWN_POSITIVES_VCF="${KNOWN_POSITIVES_VCF:-$SAMPLEA_DIR/KnownPositives_hg38.on_target.vcf.gz}"
 export ON_TARGET_TRUTH_VCF="${ON_TARGET_TRUTH_VCF:-$SAMPLEA_DIR/KnownPositives_hg38.on_target.vcf.gz}"
 

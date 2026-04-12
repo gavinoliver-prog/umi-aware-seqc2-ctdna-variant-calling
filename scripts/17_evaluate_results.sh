@@ -131,11 +131,11 @@ cross-arm comparisons, and FP rate table.
 """
 import sys, os, gzip, csv, argparse, collections
 
-DILUTION        = 25.0    # Ef = Sample A diluted 1:24 into Sample B; VAF / 25
 NEG_MB_DEFAULT  = 0.053185
 
 def classify_tier(vaf):
-    """Tier based on Sample A VAF (pre-dilution)."""
+    """Tier based on Sample A VAF (pre-dilution).
+    Expected Ef/Df VAF = Sample A VAF / dilution_factor."""
     if vaf >= 0.50: return 1   # >2% expected in Ef
     if vaf >= 0.20: return 2   # 0.8-2%
     if vaf >= 0.05: return 3   # 0.2-0.8%
@@ -235,12 +235,14 @@ def main():
     ap.add_argument('--fp-arm-d',        type=int, default=0)
     ap.add_argument('--fp-arm-a-lofreq', type=int, default=0)
     ap.add_argument('--fp-arm-c-lofreq', type=int, default=0)
+    ap.add_argument('--dilution-factor', type=float, default=25.0)
     ap.add_argument('--known-neg-mb',    type=float, default=NEG_MB_DEFAULT)
     ap.add_argument('--out-variants',    required=True)
     ap.add_argument('--out-summary',     required=True)
     ap.add_argument('--out-cross-arm',   required=True)
     ap.add_argument('--out-fp-rates',    required=True)
     args = ap.parse_args()
+    DILUTION = args.dilution_factor
 
     truth = read_truth_vcf(args.truth_vcf)
 
@@ -418,6 +420,7 @@ python3 "$PY_SCRIPT" \
   --fp-arm-d        "$fp_arm_d" \
   --fp-arm-a-lofreq "$fp_arm_a_lofreq" \
   --fp-arm-c-lofreq "$fp_arm_c_lofreq" \
+  --dilution-factor "$DILUTION_FACTOR" \
   --known-neg-mb    "$KNOWN_NEG_MB" \
   --out-variants    "$EVAL_DIR/per_variant_calls.tsv" \
   --out-summary     "$EVAL_DIR/per_arm_summary.tsv" \
