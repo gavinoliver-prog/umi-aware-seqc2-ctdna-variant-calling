@@ -1,3 +1,9 @@
+> This file provides context for Claude Code (Anthropic's agentic 
+> coding assistant) during development sessions. It documents the 
+> scientific design decisions, methodological rationale, and coding 
+> standards for this pipeline. It is preserved in the repository as 
+> supplementary documentation of the development process.
+
 # ctDNA Variant Calling Pipeline — Claude Code Project Context
 
 ## Project Summary
