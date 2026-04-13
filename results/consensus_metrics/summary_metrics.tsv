@@ -1,0 +1,7 @@
+metric	tumor	normal
+pre_consensus_total_reads	139258416	189185622
+markdup_duplicate_rate	0.9347	0.9595
+post_consensus_total_reads	16202082	15933208
+compression_ratio	8.60	11.87
+error_rate_pre_consensus	0.00048823	0.00047383
+error_rate_post_consensus	0.00016145	0.00018780

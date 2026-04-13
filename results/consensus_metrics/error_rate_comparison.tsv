@@ -1,0 +1,5 @@
+sample	condition	error_rate_proxy
+tumor	pre_consensus	0.00048823
+tumor	post_consensus	0.00016145
+normal	pre_consensus	0.00047383
+normal	post_consensus	0.00018780
